@@ -1,100 +1,53 @@
-# MDM — Multi-Agent Data Matching Pipeline
+# Multi-Agent Data Matching (MDM) Pipeline
 
-Note: recent alpha changes are summarized in `ALPHA_NOTES.md`.
+## Business Context
+This pipeline was developed to tackle data entropy in enterprise systems, specifically targeting the resolution of 90K unmatched company records from a 5.5M customer Master Data Management (MDM) system. 
 
-This repository provides a small multi-agent pipeline to fill missing CSV fields
-by querying multiple search agents (SerpAPI, OpenAI, Tavily), reconciling
-their answers via a verifier with optional registry boosting, and producing
-an output CSV.
+## Overview
+Traditional data enrichment tools often suffer from single-source bias, where a single API provider might miss a niche business or return outdated physical addresses. This project implements a consensus-based, multi-agent architecture to resolve ambiguous or incomplete corporate records. It orchestrates concurrent queries across multiple search providers, normalizes the heterogeneous outputs, and synthesizes a final, high-confidence enriched record.
 
-Quick features
-- Planner that routes rows to selected agents (per-row overrides supported).
-- Search agents: SerpAPI, OpenAI, Tavily (Tavily optional).
-- Normalization, deduplication, and a verifier that uses a registry boost.
-- Tests and debug scripts included.
+## Tech Stack & Search Providers
+* **Language:** Python (Async execution for unblocking batch operations)
+* **Interfaces:** CLI for batch processing, Gradio for interactive debugging and human-in-the-loop validation
+* **Search APIs:** SerpAPI, Google Knowledge Graph, Tavily, OpenAI (for dynamic query generation)
 
-Setup
-1. Create and activate a virtual environment (Windows PowerShell):
+## Core System Components
+* **Multi-Agent Orchestration:** Routes missing records to all four search APIs simultaneously. If a company name is highly ambiguous, an LLM agent generates diverse query variations to improve recall.
+* **Registry Boost:** A verification mechanism that anchors search results to known-good data registries, significantly reducing false positives in website and headquarters address fields.
+* **13-Category Classification:** Instead of returning a binary "match/no-match", the pipeline categorizes resolution failures into 13 distinct buckets, providing granular explainability for why a specific record could not be confirmed.
 
-```powershell
-python -m venv .venv; .\.venv\Scripts\Activate.ps1
-```
+## Known Limitations & Future Work
+*(Note: This is an Alpha build designed to validate the multi-agent consensus thesis)*
+* **API Quotas & Resiliency:** The system is heavily dependent on external API availability. Moving to production requires implementing strict token-bucket rate limiting to respect vendor quotas and handle network timeouts gracefully.
+* **Heuristic Scoring:** The current confidence scoring mechanism is heuristic-based. A future roadmap item is transitioning to a probabilistic model trained on labeled internal data.
+* **Security & Observability:** The current Gradio UI lacks authentication and is strictly for local debugging. Additionally, the system relies on standard console output; a production deployment would require migrating to structured JSON logging for observability platforms.
 
-2. Install dependencies:
+## Local Setup & Execution
 
-```powershell
+1. **Clone the repository:**
+   bash
+   git clone [https://github.com/zerg26/MDM.git](https://github.com/zerg26/MDM.git)
+   cd MDM
+
+
+2. **Install dependencies:**
+bash
 pip install -r requirements.txt
-```
 
-3. Create a `.env` file in the project root with keys (example in `.env.example`):
 
-- OPENAI_API_KEY
-- SERPAPI_API_KEY
-- GOOGLE_API_KEY
-- (optional) TAVILY_API_KEY and TAVILY_URL
-- (optional) REGISTRY_URL (if you have an external registry)
-- (optional) REGISTRY_BOOST (float, default 0.5)
 
-Quick runs
-- Run the CLI on the sample data (batch mode - processes both query files):
 
-```powershell
-python -m src.cli --batch
-```
+3. **Environment Variables:**
+Create a `.env` file in the root directory and add your API keys (see `.env.example` for the required format):
 
-- Or run on a single query file:
+  * OPENAI_API_KEY=your_key_here
+  * TAVILY_API_KEY=your_key_here
+  * SERPAPI_API_KEY=your_key_here
+  * Add Google KG keys if applicable
 
-```powershell
-python -m src.cli --input sample_data/query_group1.csv --output sample_data/output.csv --chunk-size 1 --report sample_data/report.txt
-```
 
-- Provide a planner config JSON to override agent selection per-row:
+4. **Running the Pipeline:**
+* **Batch Processing CLI:** `python src/cli.py --input path/to/input.csv`
+* **Interactive Debugging UI:** `python app.py` (Launches local Gradio server)
 
-```json
-{
-  "overrides": [
-    {"match": {"id": 42}, "agents": ["serpapi","openai"], "force": true}
-  ]
-}
-```
-
-Troubleshooting
-- for GOOGLE_API_KEY look at https://support.google.com/googleapi/answer/6158841?hl=en and enable Knowledge Graph Search API
-- Tavily DNS / connection errors: if you see `getaddrinfo failed` when running
-  Tavily probes, ensure `TAVILY_URL` is set to a resolvable endpoint and the
-  machine has outbound network access. Tavily is optional; if unset, the
-  pipeline will skip it.
-- Registry integration: set `REGISTRY_URL` to enable remote registry lookups.
-  The code can call a remote registry at `REGISTRY_URL`. Expected request:
-
-  POST {REGISTRY_URL}
-  Content-Type: application/json
-  Body: {"field": "company", "value": "Acme Corp"}
-
-  Expected response (either):
-  - {"match": true, "confidence": 0.87}
-  - {"data": {"match": true, "confidence": 0.87}}
-
-  Authentication options (via `.env`):
-  - `REGISTRY_API_KEY`: if set, will send Authorization: Bearer <key>
-  - `REGISTRY_AUTH_HEADER` and `REGISTRY_AUTH_VALUE`: to send a custom header
-
-  On network or parsing errors the code falls back to a local fuzzy-stub
-  heuristic to avoid breaking the pipeline. The verifier supports `REGISTRY_BOOST`.
-
-Tests
-- Run the test suite with:
-
-```powershell
-pytest -q
-```
-
-If you add or change async tests, `pytest-asyncio` is already listed in
-`requirements.txt` and `pytest.ini` config is present.
-
-Notes
-- The repository uses defensive parsing and normalization to avoid noisy
-  duplicates. For production use you may want to wire a real registry API and
-  implement rate-limiting/backoff tuned to your vendor quotas.
-
-License: MIT
+MIT License
